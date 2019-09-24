@@ -5,11 +5,12 @@ import smtplib
 
 
 def init_logger(log):
-    # set default debug level
+
+    # set default log root folder and debug level
     log_root = "./" if "HOME" not in os.environ else f"{os.environ['HOME']}/"
     log.setLevel(logging.INFO)
     formatter = logging.Formatter(
-        "[%(asctime)s - %(levelname)s] %(message)s (in %(module)s:%(funcName)s)"
+        "[%(asctime)s - %(levelname)s] %(message)s"
     )
 
     # set handler output warnings and errors to file and revolve if size exceed 1GB
