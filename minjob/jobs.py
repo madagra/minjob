@@ -1,5 +1,6 @@
 import time
 import ctypes
+from enum import Enum
 from multiprocessing import Process
 from threading import Thread
 from minjob.logger import logger
@@ -12,17 +13,40 @@ JOB_RETRY_TIME = 1
 JOB_MONITOR_TIME = 1
 
 
-class Job:
+class JobType(Enum):
+    """
+    The types of available monitored jobs
+    """
+    THREAD = 1
+    PROCESS = 2
+
+
+class MonitoredJob:
+
+    """
+    The abstract class for a monitored job.
+    """
+
     def __init__(self, name, target, *args, daemonize=False):
-
+        """
+        :param name: the name of the process
+        :param target: the target function the process executes when starting
+        :param args: the argument tuple to pass to the process
+        :param daemonize: run the process as daemon if set to True
+        """
         self.name = name
-        self.id = None
-        self.nfail = 0
         self.daemonize = daemonize
-        self.type = None
-
         self._target = target
         self._args = args
+
+        # a unique identifier of the job
+        self.id = None
+        # the number of times the job has failed and has been restarted by the monitor
+        self.nfail = 0
+        # the type of the job which can be either thread or process
+        self.type: JobType = None
+
+        # the job handler
         self._job = None
 
     def start(self):
@@ -62,17 +86,21 @@ class Job:
     def __str__(self):
         res = f"""
 Name: {self.name}
-Type: {self.type}
+Type: {self.type.name}
 pid:  {self.id}
 """
         return res
 
 
-class JobProcess(Job):
+class MonitoredProcess(MonitoredJob):
+
+    """
+    Start a monitored process using the Python multiprocessing library
+    """
 
     def __init__(self, name, target, *args, daemonize=False):
         super().__init__(name, target, *args, daemonize=daemonize)
-        self.type = "Process"
+        self.type = JobType.PROCESS
 
     def start(self):
         self._job = Process(target=self._target,
@@ -81,7 +109,7 @@ class JobProcess(Job):
                             daemon=self.daemonize)
         self._job.start()
         self.id = self._job.pid
-        self.type = "Thread"
+        self.type = JobType.THREAD
 
     def stop(self):
 
@@ -92,7 +120,11 @@ class JobProcess(Job):
         self._job.join()
 
 
-class JobThread(Job):
+class MonitoredThread(MonitoredJob):
+
+    """
+    Start a monitored thread using Python trheading library
+    """
 
     def __init__(self, name, target, *args, daemonize=False):
         super().__init__(name, target, *args, daemonize=daemonize)
@@ -150,15 +182,17 @@ class JobManager:
         :param job_monitor_time: the time to wait after every check of the jobs
         :param job_retry_time: the time to wait before restarting a dead job
         """
-        # this list takes track of all available processes
-        self.jobs = []
         self.name = name
-        self.max_fails = 10
-        self.mail_info = mail_info
-        self.supervisor = None
-
         self._job_monitor_time = job_monitor_time
         self._job_retry_time = job_retry_time
+        self.mail_info = mail_info
+
+        # this list takes track of all monitored processes
+        self.jobs = []
+        # the maximum number of failures before sending an email
+        self.max_fails = 10
+        # the handler of the thread executing the monitoring if non-blocking is chosen
+        self.supervisor: MonitoredThread = None
 
     def add_process(self, name, target, *args, daemonize=False):
         """
@@ -168,8 +202,10 @@ class JobManager:
         :param args: the arguments of the function
         :param daemonize: start the process as daemon if the flag is set to True
         """
-        p = JobProcess(name, target, *args, daemonize=daemonize)
+        p = MonitoredProcess(name, target, *args, daemonize=daemonize)
         self.jobs.append(p)
+
+    # TODO: add methods for removing processes by name (or id)
 
     def add_thread(self, name, target, *args, daemonize=False):
         """
@@ -179,7 +215,7 @@ class JobManager:
         :param args: the arguments of the function
         :param daemonize: start the thread as daemon if the flag is set to True
         """
-        p = JobThread(name, target, *args, daemonize=daemonize)
+        p = MonitoredThread(name, target, *args, daemonize=daemonize)
         self.jobs.append(p)
 
     def start_all(self, blocking=False):
@@ -193,13 +229,16 @@ class JobManager:
         for p in self.jobs:
             p.start()
         if not blocking:
-            self.supervisor = JobThread("supervisor", self._monitor, daemonize=True)
+            self.supervisor = MonitoredThread("supervisor", self._monitor, daemonize=True)
             self.supervisor.start()
             assert self.supervisor.id is not None
         else:
             self._monitor()
 
     def stop_all(self):
+        """
+        Abruptly interrupt all monitored jobs contained in the list.
+        """
         self.supervisor.stop()
         for p in self.jobs:
             p.stop()
@@ -212,6 +251,11 @@ class JobManager:
         return [p.name for p in self.jobs]
 
     def _monitor(self):
+        """
+        Monitor the running jobs contained in the monitored jobs list and restart
+        them in the case they are not alive. If required, an email is sent after
+        a specified number of failures.
+        """
         while True:
             for p in self.jobs:
                 if not p.check_status():
