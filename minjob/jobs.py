@@ -4,7 +4,6 @@ from enum import Enum
 from multiprocessing import Process
 from threading import Thread
 from minjob.logger import logger
-from minjob.logger import MailNotifier
 
 # These parameters are the default job monitoring and sleep before retry times
 # they should be adjusted in the JobManager constructor depending on the
@@ -123,7 +122,7 @@ class MonitoredProcess(MonitoredJob):
 class MonitoredThread(MonitoredJob):
 
     """
-    Start a monitored thread using Python trheading library
+    Start a monitored thread using Python threading library
     """
 
     def __init__(self, name, target, *args, daemonize=False):
@@ -172,20 +171,18 @@ class JobManager:
     exception occurs.
     """
 
-    def __init__(self, name="MyApp", mail_info=None,
+    def __init__(self, name="MyApp",
                  job_monitor_time=JOB_MONITOR_TIME,
                  job_retry_time=JOB_RETRY_TIME):
         """
 
         :param name: the name of the calling application
-        :param mail_info: information for sending the email. If not set no email will be sent
         :param job_monitor_time: the time to wait after every check of the jobs
         :param job_retry_time: the time to wait before restarting a dead job
         """
         self.name = name
         self._job_monitor_time = job_monitor_time
         self._job_retry_time = job_retry_time
-        self.mail_info = mail_info
 
         # this list takes track of all monitored processes
         self.jobs = []
@@ -265,10 +262,6 @@ class JobManager:
                         info = f"Job {p.name} from the {self.name} application has failed " \
                             f"more than {self.max_fails} times.aborted"
                         logger.critical(info)
-                        if self.mail_info:
-                            notifier = MailNotifier(app_name=self.name, job_name=p.name,
-                                                    config=self.mail_info)
-                            notifier.abort(info)
                     time.sleep(self._job_retry_time)
                     p.start()
             time.sleep(self._job_monitor_time)

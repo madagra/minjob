@@ -27,7 +27,6 @@ def run_thread(with_exception, name="hawk", code="alpha"):
                 break
 
 
-# FIXME: use pytest library for a better test parametrization and coverage
 class MinJobTests(unittest.TestCase):
 
     with_exceptions = [True, False]
@@ -75,6 +74,7 @@ class MinJobTests(unittest.TestCase):
         job_alive.append(manager.supervisor.is_alive())
         self.assertFalse(all(job_alive))
 
+    # FIXME: migrate to pytest to use better test parametrization
     def test_stop_jobs(self):
         for ex in self.with_exceptions:
             self._stop_jobs(ex)
